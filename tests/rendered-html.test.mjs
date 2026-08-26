@@ -50,3 +50,33 @@ test("keeps sanitization as the final HTML-transforming pipeline step", async ()
     "sanitization must happen immediately before HTML serialization",
   );
 });
+
+test("keeps PDF export paginated, theme-independent, and on patched libraries", async () => {
+  const [viewer, styles, packageJson] = await Promise.all([
+    readFile(new URL("../app/MarkdownViewer.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
+  ]);
+
+  assert.equal(packageJson.dependencies["html2pdf.js"], undefined);
+  assert.match(packageJson.dependencies["html2canvas-pro"], /^\^2\.4\./);
+  assert.match(packageJson.dependencies.jspdf, /^\^4\.2\./);
+  assert.match(viewer, /import\("html2canvas-pro"\)/);
+  assert.match(viewer, /import\("jspdf"\)/);
+  assert.match(viewer, /PDF_PAGE_HEIGHT_MM/);
+  assert.match(viewer, /className = "pdf-export-page"/);
+  assert.match(styles, /\.pdf-export-root[\s\S]*?color-scheme:\s*light/);
+  assert.match(
+    styles,
+    /@media print[\s\S]*?\.markdown-body\s*\{[\s\S]*?background:\s*#ffffff;[\s\S]*?color-scheme:\s*light/,
+  );
+});
+
+test("reruns Mermaid rendering when the active mobile pane changes", async () => {
+  const viewer = await readFile(
+    new URL("../app/MarkdownViewer.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(viewer, /\[activePane, html, resolvedTheme\]/);
+});
