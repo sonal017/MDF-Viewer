@@ -37,6 +37,12 @@ import { useReactToPrint } from "react-to-print";
 
 const STORAGE_KEY = "markdown-viewer:document";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const PDF_PAGE_WIDTH_MM = 210;
+const PDF_PAGE_HEIGHT_MM = 297;
+const PDF_MARGIN_X_MM = 14;
+const PDF_MARGIN_TOP_MM = 14;
+const PDF_MARGIN_BOTTOM_MM = 18;
+const PDF_EXPORT_WIDTH_PX = 720;
 
 const STARTER_MARKDOWN = `# Markdown Viewer
 
@@ -137,8 +143,37 @@ function downloadBlob(content: BlobPart, filename: string, type: string) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+}
+
+async function waitForPdfAssets(root: HTMLElement) {
+  await document.fonts?.ready;
+  const images = Array.from(root.querySelectorAll("img"));
+  await Promise.all(
+    images.map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          if (image.complete) {
+            resolve();
+            return;
+          }
+          const finish = () => resolve();
+          image.addEventListener("load", finish, { once: true });
+          image.addEventListener("error", finish, { once: true });
+          window.setTimeout(finish, 4000);
+        }),
+    ),
+  );
+}
+
+function isHeadingElement(element: Element) {
+  return /^H[1-6]$/.test(element.tagName);
 }
 
 function ToolbarButton({
@@ -146,17 +181,20 @@ function ToolbarButton({
   label,
   onClick,
   className = "",
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       className={`toolbar-button ${className}`}
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       title={label}
     >
@@ -176,6 +214,7 @@ export default function MarkdownViewer() {
   const [split, setSplit] = useState(50);
   const [activePane, setActivePane] = useState<"editor" | "preview">("editor");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isTocOpen, setIsTocOpen] = useState(false);
@@ -329,7 +368,9 @@ export default function MarkdownViewer() {
       const diagrams = codeBlocks.map((code) => {
         const wrapper = document.createElement("div");
         wrapper.className = "mermaid";
-        wrapper.textContent = code.textContent ?? "";
+        const source = code.textContent ?? "";
+        wrapper.dataset.mermaidSource = source;
+        wrapper.textContent = source;
         code.parentElement?.replaceWith(wrapper);
         return wrapper;
       });
@@ -345,7 +386,7 @@ export default function MarkdownViewer() {
     return () => {
       cancelled = true;
     };
-  }, [html, resolvedTheme]);
+  }, [activePane, html, resolvedTheme]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -399,7 +440,20 @@ export default function MarkdownViewer() {
 
   const copyText = async (value: string, message: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) throw new Error("Copy command failed");
+      }
       notify(message);
     } catch {
       notify("Clipboard access was blocked.");
@@ -421,21 +475,222 @@ export default function MarkdownViewer() {
 </html>`;
 
   const exportPdf = async () => {
-    if (!previewRef.current) return;
-    notify("Preparing PDF…");
-    const html2pdf = (await import("html2pdf.js")).default;
-    await html2pdf()
-      .set({
-        margin: 12,
-        filename: "markdown-preview.pdf",
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .from(previewRef.current)
-      .save();
-    notify("PDF downloaded.");
+    if (!previewRef.current || isExportingPdf) return;
+
+    setIsExportingPdf(true);
+    setStatus("Preparing PDF…");
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+
+    const exportRoot = document.createElement("article");
+    exportRoot.className = "markdown-body pdf-export-root";
+    exportRoot.setAttribute("aria-hidden", "true");
+    exportRoot.inert = true;
+
+    let mermaidModule: (typeof import("mermaid"))["default"] | null = null;
+
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas-pro"),
+        import("jspdf"),
+      ]);
+
+      const contentWidthMm = PDF_PAGE_WIDTH_MM - PDF_MARGIN_X_MM * 2;
+      const contentHeightMm =
+        PDF_PAGE_HEIGHT_MM - PDF_MARGIN_TOP_MM - PDF_MARGIN_BOTTOM_MM;
+      const pageHeightPx = Math.floor(
+        (PDF_EXPORT_WIDTH_PX * contentHeightMm) / contentWidthMm,
+      );
+
+      document.body.appendChild(exportRoot);
+      const sourceChildren = Array.from(previewRef.current.children);
+      const exportBlocks: HTMLDivElement[] = [];
+      let currentBlock: HTMLDivElement | null = null;
+
+      for (const sourceChild of sourceChildren) {
+        if (!currentBlock || isHeadingElement(sourceChild)) {
+          currentBlock = document.createElement("div");
+          currentBlock.className = "pdf-export-block";
+          exportBlocks.push(currentBlock);
+        }
+        currentBlock.appendChild(sourceChild.cloneNode(true));
+      }
+
+      let page = document.createElement("section");
+      page.className = "pdf-export-page";
+      exportRoot.appendChild(page);
+
+      for (const block of exportBlocks) {
+        page.appendChild(block);
+
+        if (page.scrollHeight > pageHeightPx && page.children.length > 1) {
+          page.removeChild(block);
+          const nextPage = document.createElement("section");
+          nextPage.className = "pdf-export-page";
+          nextPage.appendChild(block);
+          exportRoot.appendChild(nextPage);
+          page = nextPage;
+        }
+      }
+
+      const pendingDiagramCodes = Array.from(
+        exportRoot.querySelectorAll<HTMLElement>("pre > code.language-mermaid"),
+      );
+      for (const code of pendingDiagramCodes) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "mermaid";
+        wrapper.dataset.mermaidSource = code.textContent ?? "";
+        code.parentElement?.replaceWith(wrapper);
+      }
+
+      const displayMath = Array.from(
+        exportRoot.querySelectorAll<HTMLElement>(".katex-display"),
+      );
+      for (const formula of displayMath) {
+        const source = formula.querySelector("annotation")?.textContent;
+        if (!source) continue;
+        const fallback = document.createElement("div");
+        fallback.className = "pdf-math-fallback pdf-math-fallback-display";
+        fallback.textContent = source;
+        formula.replaceWith(fallback);
+      }
+
+      const inlineMath = Array.from(
+        exportRoot.querySelectorAll<HTMLElement>(".katex"),
+      );
+      for (const formula of inlineMath) {
+        const source = formula.querySelector("annotation")?.textContent;
+        if (!source) continue;
+        const fallback = document.createElement("span");
+        fallback.className = "pdf-math-fallback";
+        fallback.textContent = source;
+        formula.replaceWith(fallback);
+      }
+
+      const exportDiagrams = Array.from(
+        exportRoot.querySelectorAll<HTMLElement>("[data-mermaid-source]"),
+      );
+      if (exportDiagrams.length) {
+        const { default: mermaid } = await import("mermaid");
+        mermaidModule = mermaid;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default",
+          fontFamily: "Arial, sans-serif",
+        });
+        for (const [index, diagram] of exportDiagrams.entries()) {
+          const source = diagram.dataset.mermaidSource ?? "";
+          const rendered = await mermaid.render(
+            `pdf-mermaid-${Date.now()}-${index}`,
+            source,
+          );
+          diagram.innerHTML = rendered.svg;
+        }
+      }
+
+      await waitForPdfAssets(exportRoot);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: "a4",
+        orientation: "portrait",
+        compress: true,
+      });
+      pdf.setProperties({
+        title: "Markdown preview",
+        subject: "Exported from Markdown Viewer",
+        creator: "Markdown Viewer",
+      });
+
+      const pages = Array.from(
+        exportRoot.querySelectorAll<HTMLElement>(".pdf-export-page"),
+      );
+      let outputPageCount = 0;
+
+      for (const [pageIndex, pdfPage] of pages.entries()) {
+        setStatus(`Preparing PDF… ${pageIndex + 1}/${pages.length}`);
+        const canvas = await html2canvas(pdfPage, {
+          backgroundColor: "#ffffff",
+          scale: 1.6,
+          useCORS: true,
+          logging: false,
+          width: PDF_EXPORT_WIDTH_PX,
+          windowWidth: PDF_EXPORT_WIDTH_PX,
+        });
+
+        const maxSliceHeight = Math.max(
+          1,
+          Math.floor((canvas.width * contentHeightMm) / contentWidthMm),
+        );
+
+        for (let sourceY = 0; sourceY < canvas.height; sourceY += maxSliceHeight) {
+          const sliceHeight = Math.min(maxSliceHeight, canvas.height - sourceY);
+          const slice = document.createElement("canvas");
+          slice.width = canvas.width;
+          slice.height = sliceHeight;
+          const context = slice.getContext("2d");
+          if (!context) throw new Error("PDF canvas is unavailable.");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, slice.width, slice.height);
+          context.drawImage(
+            canvas,
+            0,
+            sourceY,
+            canvas.width,
+            sliceHeight,
+            0,
+            0,
+            canvas.width,
+            sliceHeight,
+          );
+
+          if (outputPageCount > 0) pdf.addPage();
+          outputPageCount += 1;
+          const renderedHeightMm = (sliceHeight * contentWidthMm) / slice.width;
+          pdf.addImage(
+            slice.toDataURL("image/jpeg", 0.94),
+            "JPEG",
+            PDF_MARGIN_X_MM,
+            PDF_MARGIN_TOP_MM,
+            contentWidthMm,
+            renderedHeightMm,
+            undefined,
+            "FAST",
+          );
+        }
+      }
+
+      for (let pageNumber = 1; pageNumber <= outputPageCount; pageNumber += 1) {
+        pdf.setPage(pageNumber);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(110, 118, 129);
+        pdf.text(
+          `${pageNumber} / ${outputPageCount}`,
+          PDF_PAGE_WIDTH_MM / 2,
+          PDF_PAGE_HEIGHT_MM - 7,
+          { align: "center" },
+        );
+      }
+
+      pdf.save("markdown-preview.pdf");
+      notify("PDF downloaded.");
+    } catch (error) {
+      console.error("PDF export failed", error);
+      notify("PDF export failed. Please try again.");
+    } finally {
+      exportRoot.remove();
+      if (mermaidModule) {
+        mermaidModule.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: resolvedTheme === "dark" ? "dark" : "default",
+          fontFamily: "var(--font-geist-sans)",
+        });
+      }
+      setIsExportingPdf(false);
+    }
   };
 
   const findNext = useCallback(() => {
@@ -558,10 +813,17 @@ export default function MarkdownViewer() {
             className="toolbar-secondary"
           />
           <ToolbarButton
-            icon={<FileDown size={16} />}
-            label="Export PDF"
+            icon={
+              isExportingPdf ? (
+                <span className="mini-spinner" aria-hidden="true" />
+              ) : (
+                <FileDown size={16} />
+              )
+            }
+            label={isExportingPdf ? "Exporting PDF…" : "Export PDF"}
             onClick={() => void exportPdf()}
             className="toolbar-secondary"
+            disabled={isExportingPdf}
           />
         </div>
 
@@ -644,8 +906,17 @@ export default function MarkdownViewer() {
                 >
                   <Download size={16} /> Download MD
                 </button>
-                <button type="button" onClick={() => void exportPdf()}>
-                  <FileDown size={16} /> Export PDF
+                <button
+                  type="button"
+                  onClick={() => void exportPdf()}
+                  disabled={isExportingPdf}
+                >
+                  {isExportingPdf ? (
+                    <span className="mini-spinner" aria-hidden="true" />
+                  ) : (
+                    <FileDown size={16} />
+                  )}{" "}
+                  {isExportingPdf ? "Exporting PDF…" : "Export PDF"}
                 </button>
                 <button
                   type="button"

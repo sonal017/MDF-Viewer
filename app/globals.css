@@ -266,6 +266,13 @@ footer nav {
   box-shadow: var(--shadow-sm);
 }
 
+.toolbar-button:disabled,
+.toolbar-button:disabled:hover {
+  opacity: 0.58;
+  cursor: wait;
+  box-shadow: none;
+}
+
 .search-field {
   display: flex;
   align-items: center;
@@ -687,6 +694,111 @@ footer nav {
 
 .markdown-body > :last-child {
   margin-bottom: 0 !important;
+}
+
+.pdf-export-root {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  width: 720px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  background: #ffffff;
+  color: #1f2328;
+  color-scheme: light;
+  pointer-events: none;
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-subtle: #f6f8fa;
+  --surface-hover: #eef2f6;
+  --ink: #1f2328;
+  --ink-muted: #59636e;
+  --ink-faint: #7d8590;
+  --border: #d0d7de;
+  --border-soft: #e6e9ed;
+  --blue: #0969da;
+  --blue-bright: #2f81f7;
+  --blue-soft: #ddf4ff;
+  --green: #1a7f37;
+  --green-soft: #dafbe1;
+  --amber: #9a6700;
+  --red: #cf222e;
+  --purple: #8250df;
+}
+
+.pdf-export-page {
+  width: 720px;
+  min-height: 1px;
+  overflow: visible;
+  background: #ffffff;
+}
+
+.pdf-export-block {
+  display: flow-root;
+}
+
+.pdf-export-page > .pdf-export-block:first-child > :first-child {
+  margin-top: 0 !important;
+}
+
+.pdf-export-page > .pdf-export-block:last-child > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.pdf-export-root table {
+  display: table;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+  table-layout: auto;
+}
+
+.pdf-export-root pre,
+[data-theme="dark"] .pdf-export-root pre {
+  overflow: visible;
+  background: #f6f8fa;
+  color: #24292f;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pdf-export-root pre *,
+[data-theme="dark"] .pdf-export-root pre * {
+  color: inherit !important;
+}
+
+.pdf-export-root .katex-display {
+  overflow: visible;
+}
+
+.pdf-math-fallback {
+  font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 1.05em;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.pdf-math-fallback-display {
+  margin: 1.2em 0 16px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.pdf-export-root .mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+.pdf-export-root,
+.pdf-export-root * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .markdown-body h1,
@@ -1537,6 +1649,34 @@ footer a:hover {
     width: 100%;
     max-width: none;
     padding: 0;
+    background: #ffffff;
     color: #1f2328;
+    color-scheme: light;
+    --surface: #ffffff;
+    --surface-subtle: #f6f8fa;
+    --ink: #1f2328;
+    --ink-muted: #59636e;
+    --ink-faint: #7d8590;
+    --border: #d0d7de;
+    --border-soft: #e6e9ed;
+    --blue: #0969da;
+    --blue-bright: #2f81f7;
+    --blue-soft: #ddf4ff;
+    --green: #1a7f37;
+    --green-soft: #dafbe1;
+    --amber: #9a6700;
+    --red: #cf222e;
+    --purple: #8250df;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  [data-theme="dark"] .markdown-body pre {
+    background: #f6f8fa;
+    color: #24292f;
+  }
+
+  [data-theme="dark"] .markdown-body pre * {
+    color: inherit !important;
   }
 }
