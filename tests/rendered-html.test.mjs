@@ -64,6 +64,10 @@ test("keeps PDF export paginated, theme-independent, and on patched libraries", 
   assert.match(viewer, /import\("html2canvas-pro"\)/);
   assert.match(viewer, /import\("jspdf"\)/);
   assert.match(viewer, /PDF_PAGE_HEIGHT_MM/);
+  assert.match(viewer, /PDF_RENDER_SCALE = 1\.35/);
+  assert.match(viewer, /PDF_JPEG_QUALITY = 0\.86/);
+  assert.match(viewer, /canvasToJpegBytes/);
+  assert.match(viewer, /requestIdleCallback/);
   assert.match(viewer, /className = "pdf-export-page"/);
   assert.match(styles, /\.pdf-export-root[\s\S]*?color-scheme:\s*light/);
   assert.match(
