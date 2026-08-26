@@ -43,6 +43,33 @@ const PDF_MARGIN_X_MM = 14;
 const PDF_MARGIN_TOP_MM = 14;
 const PDF_MARGIN_BOTTOM_MM = 18;
 const PDF_EXPORT_WIDTH_PX = 720;
+const PDF_RENDER_SCALE = 1.35;
+const PDF_JPEG_QUALITY = 0.86;
+
+type PdfTools = {
+  html2canvas: (typeof import("html2canvas-pro"))["default"];
+  jsPDF: (typeof import("jspdf"))["jsPDF"];
+};
+
+let pdfToolsPromise: Promise<PdfTools> | null = null;
+
+function loadPdfTools() {
+  if (!pdfToolsPromise) {
+    pdfToolsPromise = Promise.all([
+      import("html2canvas-pro"),
+      import("jspdf"),
+    ])
+      .then(([html2canvasModule, jsPdfModule]) => ({
+        html2canvas: html2canvasModule.default,
+        jsPDF: jsPdfModule.jsPDF,
+      }))
+      .catch((error) => {
+        pdfToolsPromise = null;
+        throw error;
+      });
+  }
+  return pdfToolsPromise;
+}
 
 const STARTER_MARKDOWN = `# Markdown Viewer
 
@@ -172,6 +199,18 @@ async function waitForPdfAssets(root: HTMLElement) {
   );
 }
 
+async function canvasToJpegBytes(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) =>
+        result ? resolve(result) : reject(new Error("PDF image encoding failed.")),
+      "image/jpeg",
+      PDF_JPEG_QUALITY,
+    );
+  });
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 function isHeadingElement(element: Element) {
   return /^H[1-6]$/.test(element.tagName);
 }
@@ -265,6 +304,20 @@ export default function MarkdownViewer() {
     }, markdown.length > 1_000_000 ? 1200 : 450);
     return () => clearTimeout(timer);
   }, [isHydrated, markdown, notify]);
+
+  useEffect(() => {
+    const prepare = () => {
+      void loadPdfTools().catch(() => undefined);
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(prepare, { timeout: 4000 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timer = globalThis.setTimeout(prepare, 2500);
+    return () => globalThis.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -489,10 +542,7 @@ export default function MarkdownViewer() {
     let mermaidModule: (typeof import("mermaid"))["default"] | null = null;
 
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import("html2canvas-pro"),
-        import("jspdf"),
-      ]);
+      const { html2canvas, jsPDF } = await loadPdfTools();
 
       const contentWidthMm = PDF_PAGE_WIDTH_MM - PDF_MARGIN_X_MM * 2;
       const contentHeightMm =
@@ -612,7 +662,7 @@ export default function MarkdownViewer() {
         setStatus(`Preparing PDF… ${pageIndex + 1}/${pages.length}`);
         const canvas = await html2canvas(pdfPage, {
           backgroundColor: "#ffffff",
-          scale: 1.6,
+          scale: PDF_RENDER_SCALE,
           useCORS: true,
           logging: false,
           width: PDF_EXPORT_WIDTH_PX,
@@ -626,30 +676,36 @@ export default function MarkdownViewer() {
 
         for (let sourceY = 0; sourceY < canvas.height; sourceY += maxSliceHeight) {
           const sliceHeight = Math.min(maxSliceHeight, canvas.height - sourceY);
-          const slice = document.createElement("canvas");
-          slice.width = canvas.width;
-          slice.height = sliceHeight;
-          const context = slice.getContext("2d");
-          if (!context) throw new Error("PDF canvas is unavailable.");
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, slice.width, slice.height);
-          context.drawImage(
-            canvas,
-            0,
-            sourceY,
-            canvas.width,
-            sliceHeight,
-            0,
-            0,
-            canvas.width,
-            sliceHeight,
-          );
+          let outputCanvas = canvas;
+
+          if (sourceY > 0 || sliceHeight < canvas.height) {
+            outputCanvas = document.createElement("canvas");
+            outputCanvas.width = canvas.width;
+            outputCanvas.height = sliceHeight;
+            const context = outputCanvas.getContext("2d");
+            if (!context) throw new Error("PDF canvas is unavailable.");
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+            context.drawImage(
+              canvas,
+              0,
+              sourceY,
+              canvas.width,
+              sliceHeight,
+              0,
+              0,
+              canvas.width,
+              sliceHeight,
+            );
+          }
 
           if (outputPageCount > 0) pdf.addPage();
           outputPageCount += 1;
-          const renderedHeightMm = (sliceHeight * contentWidthMm) / slice.width;
+          const renderedHeightMm =
+            (sliceHeight * contentWidthMm) / outputCanvas.width;
+          const jpegBytes = await canvasToJpegBytes(outputCanvas);
           pdf.addImage(
-            slice.toDataURL("image/jpeg", 0.94),
+            jpegBytes,
             "JPEG",
             PDF_MARGIN_X_MM,
             PDF_MARGIN_TOP_MM,
