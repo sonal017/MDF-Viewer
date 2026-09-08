@@ -3,9 +3,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  const isVercel = process.env.SEO_TEST_TARGET === "vercel";
+  const workerUrl = new URL(
+    isVercel ? "../.vercel/output/functions/__server.func/index.mjs" : "../dist/server/index.js",
+    import.meta.url,
+  );
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
+
+  if (isVercel) {
+    return worker.fetch(new Request(`http://localhost${path}`, {
+      headers: { accept: "text/html" },
+    }), { waitUntil() {} });
+  }
 
   return worker.fetch(
     new Request(`http://localhost${path}`, {
@@ -83,4 +93,86 @@ test("reruns Mermaid rendering when the active mobile pane changes", async () =>
   );
 
   assert.match(viewer, /\[activePane, html, resolvedTheme\]/);
+});
+
+const publicPages = [
+  ["/", "Free online Markdown viewer"],
+  ["/guides", "Markdown guides for better documents"],
+  ["/about", "Markdown, close to your work."],
+  ["/guides/open-markdown-file", "How to open and read a Markdown file"],
+  ["/guides/github-readme-preview", "Preview a GitHub README before you publish"],
+  ["/guides/markdown-to-pdf", "Turn Markdown into a readable PDF"],
+  ["/guides/markdown-cheat-sheet", "Markdown cheat sheet with examples you can try"],
+];
+
+test("serves unique crawlable pages, metadata, canonicals, and working internal links", async () => {
+  const titles = new Set();
+  const descriptions = new Set();
+  const renderedPages = new Map();
+  const knownPaths = new Set(publicPages.map(([path]) => path));
+
+  for (const [path, heading] of publicPages) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    renderedPages.set(path, html);
+    assert.ok(html.includes(`<h1>${heading}</h1>`) || html.includes(`>${heading}</h1>`), `server-rendered h1: ${path}`);
+    assert.equal([...html.matchAll(/<h1\b/g)].length, 1, `one public h1: ${path}`);
+    const title = html.match(/<title>(.*?)<\/title>/)?.[1];
+    const description = html.match(/<meta name="description" content="([^"]+)"/)?.[1];
+    assert.ok(title && description, `title and description: ${path}`);
+    assert.ok(!titles.has(title), `unique title: ${path}`);
+    assert.ok(!descriptions.has(description), `unique description: ${path}`);
+    titles.add(title);
+    descriptions.add(description);
+    const canonical = html.match(/<link rel="canonical" href="([^"]+)"/)?.[1];
+    assert.equal(canonical, `https://mdf-viewer.vercel.app${path === "/" ? "/" : path}`);
+    assert.equal([...html.matchAll(/<link rel="canonical"/g)].length, 1);
+    assert.doesNotMatch(html, /<meta name="robots" content="[^"]*noindex/);
+    assert.doesNotMatch(html, /https?:\/\/localhost\/og\.png/);
+
+    const structuredData = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+    if (path === "/" || path.startsWith("/guides/")) {
+      assert.ok(structuredData.length > 0, `structured data present: ${path}`);
+    }
+    for (const [, json] of structuredData) {
+      const data = JSON.parse(json);
+      assert.equal(data["@context"], "https://schema.org");
+      if (path.startsWith("/guides/")) {
+        assert.ok(data["@graph"].some((item) => item["@type"] === "Article"));
+        assert.ok(data["@graph"].some((item) => item["@type"] === "BreadcrumbList"));
+      }
+    }
+  }
+
+  for (const [path, html] of renderedPages) {
+    for (const [, href] of html.matchAll(/<a\b[^>]*href="(\/[^"]*|#[^"]+)"/g)) {
+      const url = new URL(href, `https://mdf-viewer.vercel.app${path}`);
+      if (url.pathname.startsWith("/examples/")) {
+        const sample = await readFile(new URL(`../public${url.pathname}`, import.meta.url), "utf8");
+        assert.match(sample, /^# /);
+        continue;
+      }
+      assert.ok(knownPaths.has(url.pathname), `linked page exists: ${href} on ${path}`);
+      if (url.hash) {
+        assert.ok(renderedPages.get(url.pathname).includes(`id="${url.hash.slice(1)}"`), `anchor exists: ${href}`);
+      }
+    }
+  }
+});
+
+test("sitemap lists all public pages with stable dates and robots points to it", async () => {
+  const first = await (await render("/sitemap.xml")).text();
+  const second = await (await render("/sitemap.xml")).text();
+  assert.equal(first, second, "lastmod must not change on each request");
+  const urls = [...first.matchAll(/<loc>(.*?)<\/loc>/g)].map((match) => match[1]);
+  assert.deepEqual(urls.sort(), publicPages.map(([path]) => `https://mdf-viewer.vercel.app${path === "/" ? "/" : path}`).sort());
+  const robots = await (await render("/robots.txt")).text();
+  assert.match(robots, /Allow: \//);
+  assert.match(robots, /Sitemap: https:\/\/mdf-viewer\.vercel\.app\/sitemap\.xml/);
+});
+
+test("unknown guide is a real 404 instead of a duplicate landing page", async () => {
+  const response = await render("/guides/does-not-exist");
+  assert.equal(response.status, 404);
 });

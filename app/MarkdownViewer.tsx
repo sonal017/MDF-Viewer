@@ -793,7 +793,8 @@ export default function MarkdownViewer() {
   };
 
   return (
-    <main
+    <div
+      id="editor"
       className={`app-shell ${isFullscreen ? "is-fullscreen" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
@@ -816,6 +817,8 @@ export default function MarkdownViewer() {
           </span>
         </Link>
         <div className="nav-actions">
+          <a className="viewer-guide-link" href="#about-viewer">How to use</a>
+          <Link className="viewer-guide-link" href="/guides">Guides</Link>
           <span className="privacy-pill">
             <span className="privacy-dot" aria-hidden="true" />
             Private by default
@@ -1045,6 +1048,7 @@ export default function MarkdownViewer() {
       <section
         ref={splitRef}
         className="workspace"
+        data-nosnippet=""
         aria-label="Markdown editor and preview"
       >
         <section
@@ -1191,7 +1195,7 @@ export default function MarkdownViewer() {
       <footer>
         <span>Markdown Viewer · v1.0</span>
         <nav aria-label="Footer links">
-          <a href="https://github.com/" target="_blank" rel="noreferrer">
+          <a href="https://github.com/sonal017/MDF-Viewer" target="_blank" rel="noreferrer">
             <Code2 size={14} /> GitHub
           </a>
           <a
@@ -1219,6 +1223,6 @@ export default function MarkdownViewer() {
           {status}
         </div>
       )}
-    </main>
+    </div>
   );
 }

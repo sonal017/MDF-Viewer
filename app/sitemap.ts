@@ -1,15 +1,14 @@
 import type { MetadataRoute } from "next";
+import { absoluteUrl, CONTENT_UPDATED } from "./lib/seo";
+import { guides } from "./lib/guides";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://markdown-viewer.openai.site";
-
   return [
-    {
-      url: baseUrl,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 1,
-    },
+    ...["/", "/guides", "/about"].map((path) => ({
+      url: absoluteUrl(path), lastModified: CONTENT_UPDATED,
+    })),
+    ...guides.map((guide) => ({
+      url: absoluteUrl(`/guides/${guide.slug}`), lastModified: guide.updated,
+    })),
   ];
 }

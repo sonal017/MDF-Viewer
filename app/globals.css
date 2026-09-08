@@ -18,9 +18,6 @@
   --purple: #8250df;
   --shadow-sm: 0 1px 2px rgb(31 35 40 / 5%);
   --shadow-md: 0 8px 24px rgb(140 149 159 / 20%);
-  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  --font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
 }
 
 [data-theme="dark"] {
@@ -57,6 +54,10 @@ body {
 }
 
 body {
+  /* next/font variables live on body, so resolve these aliases here. */
+  --font-sans: var(--font-geist-sans, -apple-system), BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono, "SFMono-Regular"), Consolas, monospace;
   margin: 0;
   overflow: hidden;
   background: var(--canvas);
