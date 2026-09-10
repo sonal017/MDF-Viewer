@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
+import BrandMark from "./components/BrandMark";
 import {
   type ChangeEvent,
   type DragEvent,
@@ -807,12 +808,10 @@ export default function MarkdownViewer() {
       onDrop={handleDrop}
     >
       <header className="navbar">
-        <Link className="brand" href="/" aria-label="Markdown Viewer home">
-          <span className="brand-mark" aria-hidden="true">
-            M
-          </span>
+        <Link className="brand" href="/" aria-label="MDF Viewer home">
+          <BrandMark />
           <span className="brand-copy">
-            <strong>Markdown Viewer</strong>
+            <strong>MDF Viewer</strong>
             <small>Local-first preview</small>
           </span>
         </Link>
