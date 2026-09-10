@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BrandMark from "./BrandMark";
 import { SOURCE_URL } from "../lib/seo";
 
 export function SiteFooter() {
@@ -20,7 +21,7 @@ export default function ContentShell({ children }: { children: React.ReactNode }
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="resource-header">
         <Link href="/" className="brand">
-          <span className="brand-mark" aria-hidden="true">M</span>
+          <BrandMark />
           <strong>MDF Viewer</strong>
         </Link>
         <nav aria-label="Main navigation">

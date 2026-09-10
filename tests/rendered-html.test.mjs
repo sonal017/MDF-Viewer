@@ -146,6 +146,16 @@ test("serves unique crawlable pages, metadata, canonicals, and working internal 
     assert.doesNotMatch(html, /<meta name="robots" content="[^"]*noindex/);
     assert.doesNotMatch(html, /https?:\/\/localhost\/og\.png/);
     assert.match(html, /<link rel="describedby" href="\/llms\.txt" type="text\/plain"/);
+    const brandImage = [...html.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag).find((tag) => tag.includes('class="brand-mark"'));
+    assert.ok(brandImage, `brand image: ${path}`);
+    assert.match(brandImage, /src="\/brand\/mdf-icon-96\.png"/);
+    assert.match(brandImage, /alt=""/);
+    const largeFavicon = [...html.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag).find((tag) => tag.includes('href="/brand/mdf-icon-96.png"'));
+    assert.ok(largeFavicon, `large favicon: ${path}`);
+    assert.match(largeFavicon, /rel="icon"/);
+    assert.match(largeFavicon, /sizes="96x96"/);
+    assert.match(html, /<link rel="apple-touch-icon"[^>]*href="\/apple-touch-icon\.png"/);
+    assert.doesNotMatch(html, /href="\/favicon\.svg"/);
 
     const structuredData = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
     assert.ok(structuredData.length > 0, `structured data present: ${path}`);
@@ -244,4 +254,36 @@ test("sitemap lists all public pages with stable dates and robots points to it",
 test("unknown guide is a real 404 instead of a duplicate landing page", async () => {
   const response = await render("/guides/does-not-exist");
   assert.equal(response.status, 404);
+});
+
+test("brand assets have correct dimensions, small payloads, and packaged favicon frames", async () => {
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const iconSizes = [16, 32, 48, 96, 192, 512];
+  const assets = [...iconSizes.map((size) => [`/brand/mdf-icon-${size}.png`, size]), ["/apple-touch-icon.png", 180]];
+  const buildRoot = process.env.SEO_TEST_TARGET === "vercel" ? "../.vercel/output/static" : "../dist/client";
+  for (const [path, size] of assets) {
+    const png = await readFile(new URL(`../public${path}`, import.meta.url));
+    assert.deepEqual(png.subarray(0, 8), pngSignature, `PNG signature: ${path}`);
+    assert.equal(png.readUInt32BE(16), size, `width: ${path}`);
+    assert.equal(png.readUInt32BE(20), size, `height: ${path}`);
+    assert.ok(png.length < (size <= 96 ? 32_000 : 400_000), `asset weight: ${path}`);
+    assert.deepEqual(await readFile(new URL(`${buildRoot}${path}`, import.meta.url)), png, `asset is deployed: ${path}`);
+  }
+
+  const ico = await readFile(new URL("../public/favicon.ico", import.meta.url));
+  assert.equal(ico.readUInt16LE(0), 0);
+  assert.equal(ico.readUInt16LE(2), 1, "ICO type");
+  assert.equal(ico.readUInt16LE(4), 3);
+  for (const [index, size] of [16, 32, 48].entries()) {
+    const entry = 6 + index * 16;
+    assert.equal(ico[entry], size);
+    assert.equal(ico[entry + 1], size);
+    assert.equal(ico.readUInt16LE(entry + 6), 32);
+    const length = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    const png = await readFile(new URL(`../public/brand/mdf-icon-${size}.png`, import.meta.url));
+    assert.equal(length, png.length);
+    assert.deepEqual(ico.subarray(offset, offset + length), png, `ICO frame: ${size}`);
+  }
+  assert.deepEqual(await readFile(new URL(`${buildRoot}/favicon.ico`, import.meta.url)), ico);
 });
