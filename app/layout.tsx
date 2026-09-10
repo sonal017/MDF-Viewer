@@ -30,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="describedby" href="/llms.txt" type="text/plain" />
         {/* eslint-disable-next-line @next/next/no-css-tags */}
         <link rel="stylesheet" href="/katex.min.css" />
       </head>

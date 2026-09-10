@@ -105,6 +105,15 @@ const publicPages = [
   ["/guides/markdown-cheat-sheet", "Markdown cheat sheet with examples you can try"],
 ];
 
+function decodeHtmlText(text) {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+  return text.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[\da-f]+);/gi, (_, entity) => {
+    if (!entity.startsWith("#")) return named[entity.toLowerCase()];
+    const hex = entity.slice(0, 2).toLowerCase() === "#x";
+    return String.fromCodePoint(Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10));
+  });
+}
+
 test("serves unique crawlable pages, metadata, canonicals, and working internal links", async () => {
   const titles = new Set();
   const descriptions = new Set();
@@ -114,6 +123,7 @@ test("serves unique crawlable pages, metadata, canonicals, and working internal 
   for (const [path, heading] of publicPages) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
+    assert.doesNotMatch(response.headers.get("x-robots-tag") ?? "", /\bnoindex\b/i, `public page remains indexable: ${path}`);
     const html = await response.text();
     renderedPages.set(path, html);
     assert.ok(html.includes(`<h1>${heading}</h1>`) || html.includes(`>${heading}</h1>`), `server-rendered h1: ${path}`);
@@ -121,6 +131,11 @@ test("serves unique crawlable pages, metadata, canonicals, and working internal 
     const title = html.match(/<title>(.*?)<\/title>/)?.[1];
     const description = html.match(/<meta name="description" content="([^"]+)"/)?.[1];
     assert.ok(title && description, `title and description: ${path}`);
+    assert.equal([...html.matchAll(/<title>/g)].length, 1, `one title: ${path}`);
+    // An editorial length budget for concise display, not a Google ranking rule.
+    assert.ok([...decodeHtmlText(title)].length <= 60, `concise title: ${path}`);
+    assert.equal(html.match(/<meta property="og:title" content="([^"]+)"/)?.[1], title, `Open Graph title: ${path}`);
+    assert.equal(html.match(/<meta name="twitter:title" content="([^"]+)"/)?.[1], title, `Twitter title: ${path}`);
     assert.ok(!titles.has(title), `unique title: ${path}`);
     assert.ok(!descriptions.has(description), `unique description: ${path}`);
     titles.add(title);
@@ -130,17 +145,51 @@ test("serves unique crawlable pages, metadata, canonicals, and working internal 
     assert.equal([...html.matchAll(/<link rel="canonical"/g)].length, 1);
     assert.doesNotMatch(html, /<meta name="robots" content="[^"]*noindex/);
     assert.doesNotMatch(html, /https?:\/\/localhost\/og\.png/);
+    assert.match(html, /<link rel="describedby" href="\/llms\.txt" type="text\/plain"/);
 
     const structuredData = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
-    if (path === "/" || path.startsWith("/guides/")) {
-      assert.ok(structuredData.length > 0, `structured data present: ${path}`);
-    }
+    assert.ok(structuredData.length > 0, `structured data present: ${path}`);
     for (const [, json] of structuredData) {
       const data = JSON.parse(json);
       assert.equal(data["@context"], "https://schema.org");
+      const graph = data["@graph"];
+      assert.ok(Array.isArray(graph));
       if (path.startsWith("/guides/")) {
-        assert.ok(data["@graph"].some((item) => item["@type"] === "Article"));
-        assert.ok(data["@graph"].some((item) => item["@type"] === "BreadcrumbList"));
+        assert.ok(graph.some((item) => item["@type"] === "Article"));
+      }
+      if (path !== "/") {
+        const breadcrumb = graph.find((item) => item["@type"] === "BreadcrumbList");
+        assert.ok(breadcrumb, `breadcrumb schema: ${path}`);
+        const items = breadcrumb.itemListElement;
+        const expectedPaths = path.startsWith("/guides/") ? ["/", "/guides", path] : ["/", path];
+        assert.deepEqual(items.map((item) => new URL(item.item).pathname), expectedPaths);
+        items.forEach((item, index) => {
+          assert.equal(item["@type"], "ListItem");
+          assert.equal(item.position, index + 1);
+          assert.ok(item.name);
+          assert.equal(new URL(item.item).origin, "https://mdf-viewer.vercel.app");
+        });
+      }
+      if (path === "/about" || path === "/guides") {
+        const type = path === "/about" ? "AboutPage" : "CollectionPage";
+        const page = graph.find((item) => item["@type"] === type);
+        assert.ok(page, `${type} present`);
+        assert.equal(page.url, canonical);
+        assert.equal(page.description, decodeHtmlText(description));
+        assert.equal(page.isPartOf["@id"], "https://mdf-viewer.vercel.app/#website");
+        assert.equal(page.breadcrumb["@id"], graph.find((item) => item["@type"] === "BreadcrumbList")["@id"]);
+        if (path === "/about") {
+          assert.equal(page.about["@id"], "https://mdf-viewer.vercel.app/#application");
+        } else {
+          assert.equal(page.name, heading);
+          const guidePages = publicPages.filter(([guidePath]) => guidePath.startsWith("/guides/"));
+          assert.equal(page.mainEntity["@type"], "ItemList");
+          assert.equal(page.mainEntity.numberOfItems, guidePages.length);
+          assert.deepEqual(page.mainEntity.itemListElement, guidePages.map(([guidePath, name], index) => ({
+            "@type": "ListItem", position: index + 1, name,
+            url: `https://mdf-viewer.vercel.app${guidePath}`,
+          })));
+        }
       }
     }
   }
@@ -158,6 +207,26 @@ test("serves unique crawlable pages, metadata, canonicals, and working internal 
         assert.ok(renderedPages.get(url.pathname).includes(`id="${url.hash.slice(1)}"`), `anchor exists: ${href}`);
       }
     }
+  }
+});
+
+test("llms.txt serves a public documentation index with valid links", async () => {
+  const response = await render("/llms.txt");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/plain;\s*charset=utf-8$/i);
+  assert.equal(response.headers.get("x-robots-tag"), "noindex");
+  const text = await response.text();
+  assert.match(text, /^# MDF Viewer\n\n> /);
+  assert.equal([...text.matchAll(/^# /gm)].length, 1);
+  assert.doesNotMatch(text, /<html|localhost|document\.md/);
+
+  const links = [...text.matchAll(/^- \[[^\]]+\]\((https:\/\/[^)]+)\): .+$/gm)].map((match) => match[1]);
+  const pageUrls = publicPages.map(([path]) => `https://mdf-viewer.vercel.app${path}`);
+  const samplePaths = ["/examples/reading-notes.md", "/examples/project-readme.md", "/examples/syntax-reference.md"];
+  const expectedLinks = [...pageUrls, ...samplePaths.map((path) => `https://mdf-viewer.vercel.app${path}`), "https://github.com/sonal017/MDF-Viewer"];
+  assert.deepEqual(links.toSorted(), expectedLinks.toSorted());
+  for (const path of samplePaths) {
+    assert.match(await readFile(new URL(`../public${path}`, import.meta.url), "utf8"), /^# /);
   }
 });
 
