@@ -23,6 +23,30 @@ project uses original explanations of its own supported workflows.
 - Website/application and article/breadcrumb structured data describe visible content.
 - Draft content is marked `data-nosnippet`; it is not a public document publishing feature.
 
+## September 10 audit follow-up
+
+- Shortened the homepage, guides hub, README guide, and PDF guide titles. Tests
+  enforce an editorial budget of 60 decoded characters and matching social titles.
+  This is a display preference, not a Google title-length limit or ranking guarantee.
+- Added `CollectionPage` and an `ItemList` generated from the visible guide records
+  on `/guides`, `AboutPage` on `/about`, and breadcrumb markup on both pages.
+  Every public page now has JSON-LD; tests check page types, links, and breadcrumbs.
+- Added `/llms.txt` as an optional plain-text index of the public pages and Markdown
+  examples, generated from the configured production origin and guide records.
+  Pages link to it with `rel="describedby"`. It contains no saved user drafts.
+  Its `X-Robots-Tag: noindex` applies only to the support file, not its linked pages;
+  it is intentionally absent from the sitemap. This file is not required by Google.
+- Did not install Google Analytics or Tag Manager. These are optional tracking/tag
+  management tools, not indexing requirements. Enabling them needs a real account
+  ID and a decision about tracking, consent, and the published privacy information.
+- Kept existing article update dates: metadata-only edits are not a reason to make
+  unchanged articles appear newly written. No new dependencies were added.
+
+After deployment, rerun the third-party audit on fresh responses. Its tracking
+notices may remain while tracking is disabled, and its own scoring rules are not
+Google ranking signals. Verify indexing and performance in Search Console instead
+of interpreting a higher audit score as a promised traffic increase.
+
 ## Deployment and Search Console
 
 1. Commit and push the reviewed changes through the project's normal GitHub workflow.
@@ -60,12 +84,17 @@ project documentation; avoid automated link spam.
 - Google SEO starter guide: https://developers.google.com/search/docs/fundamentals/seo-starter-guide
 - Sitemap practices: https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap
 - GFM specification: https://github.github.com/gfm/
+- Google title guidance: https://developers.google.com/search/docs/appearance/title-link
+- Google AI feature guidance: https://developers.google.com/search/docs/appearance/ai-features
+- Structured data types: https://schema.org/CollectionPage and https://schema.org/AboutPage
+- Optional llms.txt proposal: https://llmstxt.org/
 
 ## Verification
 
 `npm test` builds the application and checks server-rendered content, unique metadata,
 canonical URLs, local links and anchors, downloadable sample sources, sitemap consistency,
 robots, and an unknown guide's 404 response. Existing regression checks remain included.
+The same response suite also verifies `/llms.txt`, its content type, and public links.
 Run `npx tsc --noEmit` and `npm run lint` as well. Verify the Vercel build with
 `NITRO_PRESET=vercel` in the environment, then run `npm run build`.
 Set `SEO_TEST_TARGET=vercel` and run `node --test tests/rendered-html.test.mjs`

@@ -1,10 +1,15 @@
 import Link from "next/link";
 import ContentShell from "../components/ContentShell";
-import { pageMetadata, SOURCE_URL } from "../lib/seo";
+import StructuredData from "../components/StructuredData";
+import { absoluteUrl, pageMetadata, SOURCE_URL } from "../lib/seo";
+
+const title = "About MDF Viewer: Local Documents, Storage & Privacy";
+const description = "Learn how MDF Viewer handles Markdown files, local autosave, remote images, and exports. Read the source or report a problem through the GitHub repository.";
+const url = absoluteUrl("/about");
 
 export const metadata = pageMetadata(
-  "About MDF Viewer: Local Documents, Storage & Privacy",
-  "Learn how MDF Viewer handles Markdown files, local autosave, remote images, and exports. Read the source or report a problem through the GitHub repository.",
+  title,
+  description,
   "/about",
 );
 
@@ -37,6 +42,25 @@ export default function AboutPage() {
           </section>
         </div>
       </article>
+      <StructuredData data={{
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "AboutPage", "@id": `${url}#webpage`,
+            url, name: title, description, inLanguage: "en",
+            isPartOf: { "@id": absoluteUrl("/#website") },
+            about: { "@id": absoluteUrl("/#application") },
+            breadcrumb: { "@id": `${url}#breadcrumb` },
+          },
+          {
+            "@type": "BreadcrumbList", "@id": `${url}#breadcrumb`,
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl() },
+              { "@type": "ListItem", position: 2, name: "About", item: url },
+            ],
+          },
+        ],
+      }} />
     </ContentShell>
   );
 }

@@ -7,7 +7,7 @@ import { absoluteUrl, pageMetadata } from "./lib/seo";
 const description = "Open and preview MD files in your browser. Free Markdown viewer with GitHub-style formatting, live editing, diagrams, and PDF export. No sign-up required.";
 
 export const metadata = pageMetadata(
-  "Markdown Viewer – Free Online MD Reader & Editor | MDF Viewer", description, "/",
+  "Markdown Viewer – Free Online MD Editor | MDF Viewer", description, "/",
 );
 
 export default function Home() {

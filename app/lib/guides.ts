@@ -12,7 +12,7 @@ export const guides = [
   {
     slug: "github-readme-preview",
     title: "Preview a GitHub README before you publish",
-    metaTitle: "GitHub README Preview: Tables, Code & Checklists | MDF Viewer",
+    metaTitle: "GitHub README Preview: GFM Guide | MDF Viewer",
     description: "Preview README.md with GitHub Flavored Markdown. Try a downloadable example and check tables, task lists, code blocks, links, and images before publishing.",
     summary: "Check a README with tables, task lists, and code, including the details a local preview cannot verify.",
     label: "Check a README", sample: "/examples/project-readme.md", updated: CONTENT_UPDATED,
@@ -20,7 +20,7 @@ export const guides = [
   {
     slug: "markdown-to-pdf",
     title: "Turn Markdown into a readable PDF",
-    metaTitle: "Markdown to PDF: Export, Print & Reduce File Size | MDF Viewer",
+    metaTitle: "Markdown to PDF: Export & Print Guide | MDF Viewer",
     description: "Convert Markdown to PDF with a light page background. Compare Export PDF with Print to PDF, and troubleshoot large files, diagrams, and wide tables.",
     summary: "Choose between PDF export and browser printing, with practical fixes for large files and awkward page breaks.",
     label: "Export a document", sample: "/examples/reading-notes.md", updated: CONTENT_UPDATED,
